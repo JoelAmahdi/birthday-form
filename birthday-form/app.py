@@ -126,13 +126,13 @@ def upload_to_supabase(file_obj, filename, content_type):
     """Uploads a file to Supabase Storage."""
     file_bytes = file_obj.read()
     # Upload the file
-    response = supabase.storage.from_("birthdays").upload(
+    response = supabase.storage.from_("Birthdays").upload(
         path=filename,
         file=file_bytes,
         file_options={"content-type": content_type}
     )
     # Get the public URL for the file
-    public_url = supabase.storage.from_("birthdays").get_public_url(filename)
+    public_url = supabase.storage.from_("Birthdays").get_public_url(filename)
     return public_url
 
 @app.route('/')
