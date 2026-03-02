@@ -1,8 +1,6 @@
 import os
 import sqlite3
 import datetime
-import urllib.parse
-import socket
 from functools import wraps
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for, g
 from werkzeug.utils import secure_filename
@@ -58,37 +56,10 @@ def get_db():
         if db is None:
             conn_url = DATABASE_URL
             
-            try:
-                # Ensure the url parser knows about postgresql
-                urllib.parse.uses_netloc.append("postgresql")
-                parsed_url = urllib.parse.urlparse(conn_url)
-                
-                hostname = parsed_url.hostname
-                
-                # Render deployment fails to connect to Supabase IPv6 endpoints natively.
-                # Here we force an IPv4 resolution of the Supabase host before connecting.
-                if hostname:
-                    ipv4_address = socket.gethostbyname(hostname)
-                else:
-                    ipv4_address = hostname
-                
-                # Explicitly pass the resolved IPv4 address to psycopg2
-                db = g._database = psycopg2.connect(
-                    host=ipv4_address,
-                    database=parsed_url.path.lstrip('/'),
-                    user=parsed_url.username,
-                    password=parsed_url.password,
-                    port=parsed_url.port or 5432,
-                    sslmode='require',
-                    cursor_factory=RealDictCursor
-                )
-            except Exception as e:
-                print(f"Warning: Explicit IPv4 connection parsing failed: {e}")
-                
-                # Safe fallback to standard DSN
-                if "?sslmode=" not in conn_url and "&sslmode=" not in conn_url:
-                    conn_url += "?sslmode=require" if "?" not in conn_url else "&sslmode=require"
-                db = g._database = psycopg2.connect(conn_url, cursor_factory=RealDictCursor)
+            # Safe fallback to standard DSN
+            if "?sslmode=" not in conn_url and "&sslmode=" not in conn_url:
+                conn_url += "?sslmode=require" if "?" not in conn_url else "&sslmode=require"
+            db = g._database = psycopg2.connect(conn_url, cursor_factory=RealDictCursor)
                 
         return db
     else:
