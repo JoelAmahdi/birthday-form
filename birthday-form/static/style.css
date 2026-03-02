@@ -278,6 +278,25 @@ header p {
     display: flex;
     flex-direction: column;
     gap: 20px;
+    max-height: 60vh;
+    overflow-y: auto;
+    padding-right: 10px;
+}
+
+/* Custom Scrollbar for Submissions */
+.submissions-list::-webkit-scrollbar {
+    width: 6px;
+}
+.submissions-list::-webkit-scrollbar-track {
+    background: #f1f5f9;
+    border-radius: 4px;
+}
+.submissions-list::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 4px;
+}
+.submissions-list::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8;
 }
 
 .submission-card {
@@ -423,4 +442,51 @@ header p {
 
 .admin-link:hover {
     color: var(--primary-color);
+}
+
+.action-btn {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 8px;
+    font-family: inherit;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s;
+}
+
+.edit-btn {
+    background: #f1f5f9;
+    color: #475569;
+}
+.edit-btn:hover { background: #e2e8f0; }
+
+.save-btn {
+    background: #ecfdf5;
+    color: #059669;
+    border: 1px solid #a7f3d0;
+}
+.save-btn:hover { background: #d1fae5; }
+
+.cancel-btn {
+    background: #f8fafc;
+    color: #64748b;
+    border: 1px solid #e2e8f0;
+}
+.cancel-btn:hover { background: #f1f5f9; }
+
+.delete-btn {
+    background: #fff1f2;
+    color: #e11d48;
+}
+.delete-btn:hover { background: #ffe4e6; }
+
+.edit-input {
+    font-family: inherit;
+    font-size: 1rem;
+    padding: 6px;
+    border: 1px solid var(--primary-color);
+    border-radius: 6px;
+    margin-left: 8px;
+    background: #fff;
 }
