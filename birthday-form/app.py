@@ -2,6 +2,7 @@ import os
 import sqlite3
 import datetime
 import urllib.parse
+import socket
 from functools import wraps
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for, g
 from werkzeug.utils import secure_filename
@@ -56,10 +57,22 @@ def get_db():
         db = getattr(g, '_database', None)
         if db is None:
             # Connect using the psycopg2 connection string
-            # Ensure sslmode=require is appended for Supabase connection pooler
             conn_url = DATABASE_URL
+            
+            # Ensure sslmode=require is appended for Supabase connection pooler
             if "?sslmode=" not in conn_url and "&sslmode=" not in conn_url:
                 conn_url += "?sslmode=require" if "?" not in conn_url else "&sslmode=require"
+            
+            # Force IPv4 resolution for Render -> Supabase compatibility
+            try:
+                parsed_url = urllib.parse.urlparse(conn_url)
+                hostname = parsed_url.hostname
+                if hostname:
+                    ipv4_address = socket.gethostbyname(hostname)
+                    # Replace the hostname with the resolved IPv4 address
+                    conn_url = conn_url.replace(hostname, ipv4_address, 1)
+            except Exception as e:
+                print(f"Warning: IPv4 resolution failed, falling back to original URL. Error: {e}")
             
             db = g._database = psycopg2.connect(conn_url, cursor_factory=RealDictCursor)
         return db
