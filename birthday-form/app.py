@@ -303,11 +303,24 @@ def sync_birthday(sub_id):
 @login_required
 def uploaded_file(filename):
     from flask import send_from_directory, redirect
-    # If using Supabase Storage, the frontend might request the URL directly
-    # But if they hit this endpoint with a full URL, redirect them
-    if filename.startswith('http://') or filename.startswith('https://'):
-        return redirect(filename)
     
+    # If using Supabase Storage, the frontend might request the URL directly
+    if filename.startswith('http://') or filename.startswith('https://'):
+        # Append Supabase's download query parameter to force download instead of opening in tab
+        download_name = filename.split('/')[-1]
+        
+        # If it already has query parameters (like a token), append with &
+        if '?' in filename:
+            return redirect(f"{filename}&download={download_name}")
+        else:
+            return redirect(f"{filename}?download={download_name}")
+    
+    # For local files, send as attachment to force download when clicking the link
+    # Note: On the <img> tag, this route is used for src. If we force attachment, 
+    # it might break the <img> display. 
+    # The HTML5 'download' attribute on the <a> tag handles the download logic for us 
+    # on the frontend, so we don't strictly *need* to force it here for local files, 
+    # but the redirect enhancement above helps ensure remote files are downloaded.
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
 if __name__ == '__main__':
