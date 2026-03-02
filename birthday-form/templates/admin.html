@@ -26,9 +26,9 @@
                         <div class="sub-image">
                             <img src="{{ url_for('uploaded_file', filename=sub.image_path) }}" alt="{{ sub.name }}">
                         </div>
-                        <div class="sub-details">
-                            <h3>{{ sub.name }}</h3>
-                            <p><strong>Date:</strong> {{ sub.date }}</p>
+                        <div class="sub-details" id="details-{{ sub.id }}">
+                            <h3><span class="view-mode-{{ sub.id }}">{{ sub.name }}</span><input type="text" class="edit-mode-{{ sub.id }} edit-input name-input" value="{{ sub.name }}" style="display:none;"></h3>
+                            <p><strong>Date:</strong> <span class="view-mode-{{ sub.id }}">{{ sub.date }}</span><input type="date" class="edit-mode-{{ sub.id }} edit-input date-input" value="{{ sub.date }}" style="display:none;"></p>
                             <p class="sync-status">Status: {% if sub.synced %}<span class="status-success">Synced</span>{% else %}<span class="status-pending">Pending</span>{% endif %}</p>
                         </div>
                         <div class="sub-actions">
@@ -36,6 +36,13 @@
                             <button class="sync-btn" onclick="syncBirthday({{ sub.id }})">Sync to Calendar</button>
                             {% endif %}
                             <a href="{{ url_for('uploaded_file', filename=sub.image_path) }}" download="birthday_image_{{ sub.id }}" class="download-btn">Download Image</a>
+                            
+                            <div style="display: flex; gap: 8px; margin-top: 8px;">
+                                <button class="action-btn edit-btn view-mode-btn-{{ sub.id }}" onclick="toggleEdit({{ sub.id }}, true)">Edit</button>
+                                <button class="action-btn save-btn edit-mode-btn-{{ sub.id }}" onclick="saveEdit({{ sub.id }})" style="display:none;">Save</button>
+                                <button class="action-btn cancel-btn edit-mode-btn-{{ sub.id }}" onclick="toggleEdit({{ sub.id }}, false)" style="display:none;">Cancel</button>
+                                <button class="action-btn delete-btn view-mode-btn-{{ sub.id }}" onclick="deleteBirthday({{ sub.id }})">Delete</button>
+                            </div>
                         </div>
                     </div>
                     {% endfor %}
@@ -46,6 +53,69 @@
         </div>
     </div>
     <script>
+        function toggleEdit(id, showEdit) {
+            const viewEls = document.querySelectorAll(`.view-mode-${id}`);
+            const editEls = document.querySelectorAll(`.edit-mode-${id}`);
+            const viewBtns = document.querySelectorAll(`.view-mode-btn-${id}`);
+            const editBtns = document.querySelectorAll(`.edit-mode-btn-${id}`);
+            
+            viewEls.forEach(el => el.style.display = showEdit ? 'none' : 'inline-block');
+            editEls.forEach(el => el.style.display = showEdit ? 'inline-block' : 'none');
+            viewBtns.forEach(btn => btn.style.display = showEdit ? 'none' : 'inline-block');
+            editBtns.forEach(btn => btn.style.display = showEdit ? 'inline-block' : 'none');
+        }
+
+        async function saveEdit(id) {
+            const card = document.getElementById(`details-${id}`);
+            const name = card.querySelector('.name-input').value;
+            const date = card.querySelector('.date-input').value;
+            
+            const formData = new FormData();
+            formData.append('name', name);
+            formData.append('date', date);
+
+            try {
+                const response = await fetch(`/api/edit-birthday/${id}`, {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    // Update view text
+                    const viewEls = card.querySelectorAll(`.view-mode-${id}`);
+                    viewEls[0].innerText = name;
+                    viewEls[1].innerText = date;
+                    toggleEdit(id, false);
+                } else {
+                    alert(result.error || 'Failed to update');
+                }
+            } catch (err) {
+                console.error(err);
+                alert('An error occurred while updating.');
+            }
+        }
+
+        async function deleteBirthday(id) {
+            if (!confirm("Are you sure you want to delete this birthday? This action cannot be undone.")) return;
+            
+            try {
+                const response = await fetch(`/api/delete-birthday/${id}`, { method: 'DELETE' });
+                const result = await response.json();
+                
+                if (response.ok) {
+                    const card = document.getElementById(`sub-${id}`);
+                    card.remove();
+                } else {
+                    alert(result.error || 'Failed to delete');
+                }
+            } catch (err) {
+                console.error(err);
+                alert('An error occurred while deleting.');
+            }
+        }
+
         async function syncBirthday(id) {
             const btn = document.querySelector(`#sub-${id} .sync-btn`);
             btn.disabled = true;
@@ -60,7 +130,6 @@
                     card.classList.add('synced-card');
                     card.querySelector('.sync-status').innerHTML = 'Status: <span class="status-success">Synced</span>';
                     btn.remove();
-                    // alert(result.message); // removed alert to make it smoother
                 } else {
                     alert(result.error || 'Failed to sync');
                     btn.disabled = false;
