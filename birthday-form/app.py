@@ -73,9 +73,15 @@ def init_db():
                     name TEXT NOT NULL,
                     date TEXT NOT NULL,
                     image_path TEXT NOT NULL,
-                    synced BOOLEAN NOT NULL DEFAULT FALSE
+                    synced BOOLEAN NOT NULL DEFAULT FALSE,
+                    position TEXT
                 )
             ''')
+            # Attempt to add the position column if it doesn't already exist (backward compatibility)
+            try:
+                cursor.execute('ALTER TABLE submissions ADD COLUMN position TEXT')
+            except Exception:
+                db.rollback() # Postgres requires rollback after a failed query
         else:
             # SQLite syntax
             cursor.execute('''
@@ -84,9 +90,15 @@ def init_db():
                     name TEXT NOT NULL,
                     date TEXT NOT NULL,
                     image_path TEXT NOT NULL,
-                    synced BOOLEAN NOT NULL DEFAULT 0
+                    synced BOOLEAN NOT NULL DEFAULT 0,
+                    position TEXT
                 )
             ''')
+            try:
+                cursor.execute('ALTER TABLE submissions ADD COLUMN position TEXT')
+            except Exception:
+                pass # Column already exists
+        
         db.commit()
         if DATABASE_URL:
             cursor.close()
@@ -146,6 +158,7 @@ def submit_birthday():
     
     file = request.files['picture']
     name = request.form.get('name')
+    position = request.form.get('position', '')
     date_str = request.form.get('date')
 
     if not name or not date_str:
@@ -177,14 +190,14 @@ def submit_birthday():
         if DATABASE_URL:
             # psycopg2 uses %s
             cursor.execute(
-                'INSERT INTO submissions (name, date, image_path) VALUES (%s, %s, %s)', 
-                (name, date_str, image_path)
+                'INSERT INTO submissions (name, position, date, image_path) VALUES (%s, %s, %s, %s)', 
+                (name, position, date_str, image_path)
             )
         else:
             # sqlite uses ?
             cursor.execute(
-                'INSERT INTO submissions (name, date, image_path) VALUES (?, ?, ?)', 
-                (name, date_str, image_path)
+                'INSERT INTO submissions (name, position, date, image_path) VALUES (?, ?, ?, ?)', 
+                (name, position, date_str, image_path)
             )
             
         db.commit()
@@ -260,9 +273,11 @@ def sync_birthday(sub_id):
                 'message': 'Simulated sync (credentials.json missing)'
             }), 200
 
+        position_title = f" ({sub['position']})" if sub.get('position') else ""
+        position_desc = f"\nDepartment / position held: {sub['position']}" if sub.get('position') else ""
         event = {
-            'summary': f"🎂 {sub['name']}'s Birthday",
-            'description': f"Don't forget to wish {sub['name']} a happy birthday!\n\nView or download their picture on the Admin Dashboard:\n{request.url_root}admin",
+            'summary': f"🎂 {sub['name']}'s Birthday{position_title}",
+            'description': f"Don't forget to wish {sub['name']} a happy birthday!{position_desc}\n\nView or download their picture on the Admin Dashboard:\n{request.url_root}admin",
             'start': {
                 'date': str(birthday_date),
                 'timeZone': 'UTC',
