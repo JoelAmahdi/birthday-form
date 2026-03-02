@@ -262,7 +262,7 @@ def sync_birthday(sub_id):
 
         event = {
             'summary': f"🎂 {sub['name']}'s Birthday",
-            'description': f"Don't forget to wish {sub['name']} a happy birthday!",
+            'description': f"Don't forget to wish {sub['name']} a happy birthday!\n\nView or download their picture on the Admin Dashboard:\n{request.url_root}admin",
             'start': {
                 'date': str(birthday_date),
                 'timeZone': 'UTC',
@@ -322,6 +322,54 @@ def uploaded_file(filename):
     # on the frontend, so we don't strictly *need* to force it here for local files, 
     # but the redirect enhancement above helps ensure remote files are downloaded.
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+
+@app.route('/api/edit-birthday/<int:sub_id>', methods=['POST'])
+@login_required
+def edit_birthday(sub_id):
+    name = request.form.get('name')
+    date_str = request.form.get('date')
+    
+    if not name or not date_str:
+        return jsonify({'error': 'Name and date are required'}), 400
+        
+    db = get_db()
+    cursor = db.cursor() if DATABASE_URL else db
+    
+    try:
+        if DATABASE_URL:
+            cursor.execute('UPDATE submissions SET name = %s, date = %s WHERE id = %s', (name, date_str, sub_id))
+        else:
+            cursor.execute('UPDATE submissions SET name = ?, date = ? WHERE id = ?', (name, date_str, sub_id))
+            
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        if DATABASE_URL: cursor.close()
+        return jsonify({'error': 'Failed to update record.'}), 500
+        
+    if DATABASE_URL: cursor.close()
+    return jsonify({'message': 'Successfully updated birthday!'}), 200
+
+@app.route('/api/delete-birthday/<int:sub_id>', methods=['DELETE'])
+@login_required
+def delete_birthday(sub_id):
+    db = get_db()
+    cursor = db.cursor() if DATABASE_URL else db
+    
+    try:
+        if DATABASE_URL:
+            cursor.execute('DELETE FROM submissions WHERE id = %s', (sub_id,))
+        else:
+            cursor.execute('DELETE FROM submissions WHERE id = ?', (sub_id,))
+            
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        if DATABASE_URL: cursor.close()
+        return jsonify({'error': 'Failed to delete record.'}), 500
+        
+    if DATABASE_URL: cursor.close()
+    return jsonify({'message': 'Successfully deleted birthday!'}), 200
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
