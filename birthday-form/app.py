@@ -214,13 +214,16 @@ def logout():
 @login_required
 def admin():
     db = get_db()
-    cursor = db.cursor() if DATABASE_URL else db
-    
-    cursor.execute('SELECT * FROM submissions ORDER BY id DESC')
-    submissions = cursor.fetchall()
     
     if DATABASE_URL:
+        cursor = db.cursor()
+        cursor.execute('SELECT * FROM submissions ORDER BY id DESC')
+        submissions = cursor.fetchall()
         cursor.close()
+    else:
+        # SQLite connection handles execute differently
+        submissions = db.execute('SELECT * FROM submissions ORDER BY id DESC').fetchall()
+        
         
     return render_template('admin.html', submissions=submissions)
 
