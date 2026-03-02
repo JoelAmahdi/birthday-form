@@ -13,6 +13,10 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 from supabase import create_client, Client
 from dotenv import load_dotenv
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from dotenv import load_dotenv
 
 # Load environment variables from .env if present
 load_dotenv()
@@ -25,6 +29,13 @@ DATABASE = 'birthdays.db'
 DATABASE_URL = os.environ.get('DATABASE_URL')
 SUPABASE_URL = os.environ.get('SUPABASE_URL')
 SUPABASE_KEY = os.environ.get('SUPABASE_KEY')
+
+# SMTP and Notifications configuration
+SMTP_SERVER = os.environ.get('SMTP_SERVER')
+SMTP_PORT = int(os.environ.get('SMTP_PORT', 587))
+SMTP_USERNAME = os.environ.get('SMTP_USERNAME')
+SMTP_PASSWORD = os.environ.get('SMTP_PASSWORD')
+ADMIN_EMAIL = os.environ.get('ADMIN_EMAIL')
 
 # Initialize Supabase client if credentials are provided
 supabase: Client = None
@@ -129,13 +140,22 @@ def login_required(f):
     return decorated_function
 
 def get_calendar_service():
-    """Shows basic usage of the Google Calendar API."""
     creds = None
     if os.path.exists('token.json'):
-        creds = Credentials.from_authorized_user_file('token.json', SCOPES)
+        try:
+            creds = Credentials.from_authorized_user_file('token.json', SCOPES)
+        except Exception as e:
+            print(f"Error loading credentials: {e}")
+            creds = None
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
+            try:
+                creds.refresh(Request())
+            except Exception as e:
+                print(f"Error refreshing credentials: {e}")
+                creds = None
+                if os.path.exists('token.json'):
+                    os.remove('token.json')
         else:
             if not os.path.exists('credentials.json'):
                 return None
@@ -147,6 +167,93 @@ def get_calendar_service():
 
     service = build('calendar', 'v3', credentials=creds)
     return service
+
+def send_admin_notification(sub, request_url_root):
+    if not (SMTP_SERVER and SMTP_USERNAME and SMTP_PASSWORD and ADMIN_EMAIL):
+        print("SMTP credentials not fully configured. Skipping email notification.")
+        return
+    try:
+        msg = MIMEMultipart()
+        msg['From'] = SMTP_USERNAME
+        msg['To'] = ADMIN_EMAIL
+        event_type = sub.get('event_type') or 'Birthday'
+        msg['Subject'] = f"New Event Submitted: {sub['name']}'s {event_type}"
+        
+        body = f"""
+        <html>
+          <body>
+            <h2>New Event Submission</h2>
+            <p><strong>Name:</strong> {sub['name']}</p>
+            <p><strong>Event:</strong> {event_type}</p>
+            <p><strong>Date:</strong> {sub['date']}</p>
+            <p><strong>Position:</strong> {sub.get('position', 'N/A')}</p>
+            <p><strong>WhatsApp:</strong> {sub.get('whatsapp', 'N/A')}</p>
+            <p><strong>Email:</strong> {sub.get('email', 'N/A')}</p>
+            <p><a href="{request_url_root}admin">View in Admin Dashboard</a></p>
+          </body>
+        </html>
+        """
+        msg.attach(MIMEText(body, 'html'))
+        
+        server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
+        server.starttls()
+        server.login(SMTP_USERNAME, SMTP_PASSWORD)
+        server.send_message(msg)
+        server.quit()
+        print("Admin notification email sent successfully.")
+    except Exception as e:
+        print(f"Failed to send admin notification email: {e}")
+
+def sync_event_to_calendar(sub, request_url_root):
+    try:
+        event_date = datetime.datetime.strptime(sub['date'], "%Y-%m-%d").date()
+        service = get_calendar_service()
+        
+        if not service:
+            return False, "Simulated sync (credentials.json missing)"
+
+        event_type = sub.get('event_type') or 'Birthday'
+        is_birthday = event_type.lower() == 'birthday'
+        wish_text = "a happy birthday" if is_birthday else f"a happy {event_type}"
+        emoji = "🎂" if is_birthday else "🎉"
+
+        position_title = f" ({sub['position']})" if sub.get('position') else ""
+        position_desc = f"\nDepartment / position held: {sub['position']}" if sub.get('position') else ""
+        
+        contact_desc = ""
+        if sub.get('whatsapp'):
+            contact_desc += f"\nWhatsApp: {sub['whatsapp']}"
+        if sub.get('email'):
+            contact_desc += f"\nEmail: {sub['email']}"
+
+        event = {
+            'summary': f"{emoji} {sub['name']}'s {event_type}{position_title}",
+            'description': f"Don't forget to wish {sub['name']} {wish_text}!{position_desc}{contact_desc}\n\nView or download their picture on the Admin Dashboard:\n{request_url_root}admin",
+            'start': {
+                'date': str(event_date),
+                'timeZone': 'UTC',
+            },
+            'end': {
+                'date': str(event_date + datetime.timedelta(days=1)),
+                'timeZone': 'UTC',
+            },
+            'recurrence': [
+                'RRULE:FREQ=YEARLY'
+            ],
+            'reminders': {
+                'useDefault': False,
+                'overrides': [
+                    {'method': 'email', 'minutes': 24 * 60},
+                    {'method': 'popup', 'minutes': 10},
+                ],
+            },
+        }
+
+        service.events().insert(calendarId='primary', body=event).execute()
+        return True, "Successfully synced to calendar"
+    except Exception as e:
+        print(f"Calendar Sync Error: {e}")
+        return False, str(e)
 
 def upload_to_supabase(file_obj, filename, content_type):
     """Uploads a file to Supabase Storage."""
@@ -201,23 +308,41 @@ def submit_birthday():
             image_path = filename
 
         db = get_db()
-        cursor = db.cursor() if DATABASE_URL else db
+        cursor = db.cursor()
         
         # Insert into database using parameterization appropriate for the DB type
         if DATABASE_URL:
             # psycopg2 uses %s
             cursor.execute(
-                'INSERT INTO submissions (name, position, event_type, whatsapp, email, date, image_path) VALUES (%s, %s, %s, %s, %s, %s, %s)', 
+                'INSERT INTO submissions (name, position, event_type, whatsapp, email, date, image_path) VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id', 
                 (name, position, event_type, whatsapp, email, date_str, image_path)
             )
+            inserted_id = cursor.fetchone()['id']
+            cursor.execute('SELECT * FROM submissions WHERE id = %s', (inserted_id,))
+            new_sub = cursor.fetchone()
         else:
             # sqlite uses ?
             cursor.execute(
                 'INSERT INTO submissions (name, position, event_type, whatsapp, email, date, image_path) VALUES (?, ?, ?, ?, ?, ?, ?)', 
                 (name, position, event_type, whatsapp, email, date_str, image_path)
             )
+            inserted_id = cursor.lastrowid
+            cursor.execute('SELECT * FROM submissions WHERE id = ?', (inserted_id,))
+            new_sub = cursor.fetchone()
             
         db.commit()
+        
+        if new_sub:
+            success, msg = sync_event_to_calendar(new_sub, request.url_root)
+            if success or "Simulated" in msg:
+                if DATABASE_URL:
+                    cursor.execute('UPDATE submissions SET synced = TRUE WHERE id = %s', (inserted_id,))
+                else:
+                    cursor.execute('UPDATE submissions SET synced = 1 WHERE id = ?', (inserted_id,))
+                db.commit()
+                
+            send_admin_notification(new_sub, request.url_root)
+
         if DATABASE_URL:
             cursor.close()
 
@@ -275,68 +400,19 @@ def sync_event(sub_id):
         return jsonify({'error': 'Submission not found'}), 404
 
     try:
-        event_date = datetime.datetime.strptime(sub['date'], "%Y-%m-%d").date()
-        service = get_calendar_service()
+        success, message = sync_event_to_calendar(sub, request.url_root)
         
-        if not service:
-            # Simulate calendar sync if credentials.json is missing
+        if success or "Simulated" in message:
             if DATABASE_URL:
                 cursor.execute('UPDATE submissions SET synced = TRUE WHERE id = %s', (sub_id,))
             else:
                 cursor.execute('UPDATE submissions SET synced = 1 WHERE id = ?', (sub_id,))
             db.commit()
             if DATABASE_URL: cursor.close()
-            return jsonify({
-                'message': 'Simulated sync (credentials.json missing)'
-            }), 200
-
-        event_type = sub.get('event_type') or 'Birthday'
-        is_birthday = event_type.lower() == 'birthday'
-        wish_text = "a happy birthday" if is_birthday else f"a happy {event_type}"
-        emoji = "🎂" if is_birthday else "🎉"
-
-        position_title = f" ({sub['position']})" if sub.get('position') else ""
-        position_desc = f"\nDepartment / position held: {sub['position']}" if sub.get('position') else ""
-        
-        contact_desc = ""
-        if sub.get('whatsapp'):
-            contact_desc += f"\nWhatsApp: {sub['whatsapp']}"
-        if sub.get('email'):
-            contact_desc += f"\nEmail: {sub['email']}"
-
-        event = {
-            'summary': f"{emoji} {sub['name']}'s {event_type}{position_title}",
-            'description': f"Don't forget to wish {sub['name']} {wish_text}!{position_desc}{contact_desc}\n\nView or download their picture on the Admin Dashboard:\n{request.url_root}admin",
-            'start': {
-                'date': str(event_date),
-                'timeZone': 'UTC',
-            },
-            'end': {
-                'date': str(event_date + datetime.timedelta(days=1)),
-                'timeZone': 'UTC',
-            },
-            'recurrence': [
-                'RRULE:FREQ=YEARLY'
-            ],
-            'reminders': {
-                'useDefault': False,
-                'overrides': [
-                    {'method': 'email', 'minutes': 24 * 60},
-                    {'method': 'popup', 'minutes': 10},
-                ],
-            },
-        }
-
-        service.events().insert(calendarId='primary', body=event).execute()
-        
-        if DATABASE_URL:
-            cursor.execute('UPDATE submissions SET synced = TRUE WHERE id = %s', (sub_id,))
+            return jsonify({'message': message}), 200
         else:
-            cursor.execute('UPDATE submissions SET synced = 1 WHERE id = ?', (sub_id,))
-        db.commit()
-        if DATABASE_URL: cursor.close()
-
-        return jsonify({'message': 'Successfully synced to calendar'}), 200
+            if DATABASE_URL: cursor.close()
+            return jsonify({'error': message}), 500
 
     except Exception as e:
         print(e)
