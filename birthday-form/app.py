@@ -56,7 +56,12 @@ def get_db():
         db = getattr(g, '_database', None)
         if db is None:
             # Connect using the psycopg2 connection string
-            db = g._database = psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
+            # Ensure sslmode=require is appended for Supabase connection pooler
+            conn_url = DATABASE_URL
+            if "?sslmode=" not in conn_url and "&sslmode=" not in conn_url:
+                conn_url += "?sslmode=require" if "?" not in conn_url else "&sslmode=require"
+            
+            db = g._database = psycopg2.connect(conn_url, cursor_factory=RealDictCursor)
         return db
     else:
         # Fallback to SQLite
