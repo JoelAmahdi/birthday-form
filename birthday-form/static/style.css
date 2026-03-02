@@ -455,38 +455,26 @@ header p {
     transition: all 0.3s;
 }
 
-.edit-btn {
-    background: #f1f5f9;
-    color: #475569;
-}
-.edit-btn:hover { background: #e2e8f0; }
-
-.save-btn {
-    background: #ecfdf5;
-    color: #059669;
-    border: 1px solid #a7f3d0;
-}
-.save-btn:hover { background: #d1fae5; }
-
-.cancel-btn {
-    background: #f8fafc;
-    color: #64748b;
-    border: 1px solid #e2e8f0;
-}
-.cancel-btn:hover { background: #f1f5f9; }
-
 .delete-btn {
-    background: #fff1f2;
+    display: inline-block;
+    padding: 10px 20px;
+    background: transparent;
+    border: 2px solid #e11d48;
+    border-radius: 8px;
     color: #e11d48;
-}
-.delete-btn:hover { background: #ffe4e6; }
-
-.edit-input {
+    text-decoration: none;
     font-family: inherit;
-    font-size: 1rem;
-    padding: 6px;
-    border: 1px solid var(--primary-color);
-    border-radius: 6px;
-    margin-left: 8px;
-    background: #fff;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s;
+    text-align: center;
+    margin-top: 10px;
+}
+
+.delete-btn:hover {
+    background: #e11d48;
+    color: white;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(225, 29, 72, 0.2);
 }
