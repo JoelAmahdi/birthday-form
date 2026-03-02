@@ -56,25 +56,36 @@ def get_db():
         # Use PostgreSQL
         db = getattr(g, '_database', None)
         if db is None:
-            # Connect using the psycopg2 connection string
             conn_url = DATABASE_URL
             
-            # Ensure sslmode=require is appended for Supabase connection pooler
-            if "?sslmode=" not in conn_url and "&sslmode=" not in conn_url:
-                conn_url += "?sslmode=require" if "?" not in conn_url else "&sslmode=require"
-            
-            # Force IPv4 resolution for Render -> Supabase compatibility
+            # Parse the URL to explicitly pass connection arguments and force IPv4
             try:
                 parsed_url = urllib.parse.urlparse(conn_url)
                 hostname = parsed_url.hostname
+                
+                # Force IPv4 resolution for Render -> Supabase compatibility
                 if hostname:
                     ipv4_address = socket.gethostbyname(hostname)
-                    # Replace the hostname with the resolved IPv4 address
-                    conn_url = conn_url.replace(hostname, ipv4_address, 1)
+                else:
+                    ipv4_address = hostname
+                
+                # Connect with explicit kwargs instead of the dsn string to guarantee IPv4 usage
+                db = g._database = psycopg2.connect(
+                    host=ipv4_address,
+                    database=parsed_url.path.lstrip('/'),
+                    user=parsed_url.username,
+                    password=parsed_url.password,
+                    port=parsed_url.port or 5432,
+                    sslmode='require',
+                    cursor_factory=RealDictCursor
+                )
             except Exception as e:
-                print(f"Warning: IPv4 resolution failed, falling back to original URL. Error: {e}")
-            
-            db = g._database = psycopg2.connect(conn_url, cursor_factory=RealDictCursor)
+                print(f"Warning: Explicit IPv4 connection failed, falling back to DSN. Error: {e}")
+                # Fallback to the original DSN method with sslmode
+                if "?sslmode=" not in conn_url and "&sslmode=" not in conn_url:
+                    conn_url += "?sslmode=require" if "?" not in conn_url else "&sslmode=require"
+                db = g._database = psycopg2.connect(conn_url, cursor_factory=RealDictCursor)
+                
         return db
     else:
         # Fallback to SQLite
