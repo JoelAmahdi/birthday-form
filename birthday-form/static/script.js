@@ -1,11 +1,27 @@
 document.addEventListener('DOMContentLoaded', () => {
     const fileInput = document.getElementById('picture');
     const imagePreview = document.getElementById('imagePreview');
-    const form = document.getElementById('birthdayForm');
+    const form = document.getElementById('eventForm');
     const submitBtn = document.getElementById('submitBtn');
     const btnText = document.querySelector('.btn-text');
     const loader = document.querySelector('.loader');
     const statusMessage = document.getElementById('statusMessage');
+
+    const eventTypeSelect = document.getElementById('event_type_select');
+    const customEventGroup = document.getElementById('custom_event_group');
+    const customEventInput = document.getElementById('custom_event');
+
+    if (eventTypeSelect) {
+        eventTypeSelect.addEventListener('change', function() {
+            if (this.value === 'Other') {
+                customEventGroup.style.display = 'block';
+                customEventInput.required = true;
+            } else {
+                customEventGroup.style.display = 'none';
+                customEventInput.required = false;
+            }
+        });
+    }
 
     fileInput.addEventListener('change', function() {
         const file = this.files[0];
@@ -35,6 +51,15 @@ document.addEventListener('DOMContentLoaded', () => {
         submitBtn.disabled = true;
 
         const formData = new FormData(form);
+        
+        // Handle custom event type logic
+        const eventType = formData.get('event_type_select');
+        if (eventType === 'Other') {
+            formData.set('event_type', customEventInput.value);
+        } else {
+            formData.set('event_type', eventType);
+        }
+        formData.delete('event_type_select');
 
         try {
             const response = await fetch('/api/submit', {
@@ -45,7 +70,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const result = await response.json();
 
             if (response.ok) {
-                statusMessage.textContent = 'Successfully submitted birthday!';
+                statusMessage.textContent = 'Successfully submitted event!';
                 statusMessage.className = 'status-message status-success';
                 form.reset();
                 imagePreview.style.display = 'none';
