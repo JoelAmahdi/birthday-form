@@ -28,6 +28,9 @@
                         </div>
                         <div class="sub-details" id="details-{{ sub.id }}">
                             <h3>{{ sub.name }}</h3>
+                            {% if sub.position %}
+                            <p class="sub-position" style="color: var(--primary-color); font-weight: 500; font-size: 0.95rem; margin-top: -3px; margin-bottom: 5px;">{{ sub.position }}</p>
+                            {% endif %}
                             <p><strong>Date:</strong> {{ sub.date }}</p>
                             <p class="sync-status">Status: {% if sub.synced %}<span class="status-success">Synced</span>{% else %}<span class="status-pending">Pending</span>{% endif %}</p>
                         </div>
