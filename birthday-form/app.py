@@ -74,14 +74,21 @@ def init_db():
                     date TEXT NOT NULL,
                     image_path TEXT NOT NULL,
                     synced BOOLEAN NOT NULL DEFAULT FALSE,
-                    position TEXT
+                    position TEXT,
+                    event_type TEXT,
+                    whatsapp TEXT,
+                    email TEXT
                 )
             ''')
-            # Attempt to add the position column if it doesn't already exist (backward compatibility)
-            try:
-                cursor.execute('ALTER TABLE submissions ADD COLUMN position TEXT')
-            except Exception:
-                db.rollback() # Postgres requires rollback after a failed query
+            # Attempt to add columns for backward compatibility
+            try: cursor.execute('ALTER TABLE submissions ADD COLUMN position TEXT')
+            except Exception: db.rollback()
+            try: cursor.execute('ALTER TABLE submissions ADD COLUMN event_type TEXT')
+            except Exception: db.rollback()
+            try: cursor.execute('ALTER TABLE submissions ADD COLUMN whatsapp TEXT')
+            except Exception: db.rollback()
+            try: cursor.execute('ALTER TABLE submissions ADD COLUMN email TEXT')
+            except Exception: db.rollback()
         else:
             # SQLite syntax
             cursor.execute('''
@@ -91,13 +98,20 @@ def init_db():
                     date TEXT NOT NULL,
                     image_path TEXT NOT NULL,
                     synced BOOLEAN NOT NULL DEFAULT 0,
-                    position TEXT
+                    position TEXT,
+                    event_type TEXT,
+                    whatsapp TEXT,
+                    email TEXT
                 )
             ''')
-            try:
-                cursor.execute('ALTER TABLE submissions ADD COLUMN position TEXT')
-            except Exception:
-                pass # Column already exists
+            try: cursor.execute('ALTER TABLE submissions ADD COLUMN position TEXT')
+            except Exception: pass
+            try: cursor.execute('ALTER TABLE submissions ADD COLUMN event_type TEXT')
+            except Exception: pass
+            try: cursor.execute('ALTER TABLE submissions ADD COLUMN whatsapp TEXT')
+            except Exception: pass
+            try: cursor.execute('ALTER TABLE submissions ADD COLUMN email TEXT')
+            except Exception: pass
         
         db.commit()
         if DATABASE_URL:
@@ -159,6 +173,9 @@ def submit_birthday():
     file = request.files['picture']
     name = request.form.get('name')
     position = request.form.get('position', '')
+    event_type = request.form.get('event_type', 'Birthday')
+    whatsapp = request.form.get('whatsapp', '')
+    email = request.form.get('email', '')
     date_str = request.form.get('date')
 
     if not name or not date_str:
@@ -190,21 +207,21 @@ def submit_birthday():
         if DATABASE_URL:
             # psycopg2 uses %s
             cursor.execute(
-                'INSERT INTO submissions (name, position, date, image_path) VALUES (%s, %s, %s, %s)', 
-                (name, position, date_str, image_path)
+                'INSERT INTO submissions (name, position, event_type, whatsapp, email, date, image_path) VALUES (%s, %s, %s, %s, %s, %s, %s)', 
+                (name, position, event_type, whatsapp, email, date_str, image_path)
             )
         else:
             # sqlite uses ?
             cursor.execute(
-                'INSERT INTO submissions (name, position, date, image_path) VALUES (?, ?, ?, ?)', 
-                (name, position, date_str, image_path)
+                'INSERT INTO submissions (name, position, event_type, whatsapp, email, date, image_path) VALUES (?, ?, ?, ?, ?, ?, ?)', 
+                (name, position, event_type, whatsapp, email, date_str, image_path)
             )
             
         db.commit()
         if DATABASE_URL:
             cursor.close()
 
-        return jsonify({'message': 'Successfully submitted birthday!'}), 200
+        return jsonify({'message': 'Successfully submitted event!'}), 200
 
     return jsonify({'error': 'Unknown error occurred.'}), 500
 
@@ -240,9 +257,9 @@ def admin():
         
     return render_template('admin.html', submissions=submissions)
 
-@app.route('/api/sync-birthday/<int:sub_id>', methods=['POST'])
+@app.route('/api/sync-event/<int:sub_id>', methods=['POST'])
 @login_required
-def sync_birthday(sub_id):
+def sync_event(sub_id):
     db = get_db()
     cursor = db.cursor() if DATABASE_URL else db
     
@@ -258,7 +275,7 @@ def sync_birthday(sub_id):
         return jsonify({'error': 'Submission not found'}), 404
 
     try:
-        birthday_date = datetime.datetime.strptime(sub['date'], "%Y-%m-%d").date()
+        event_date = datetime.datetime.strptime(sub['date'], "%Y-%m-%d").date()
         service = get_calendar_service()
         
         if not service:
@@ -273,17 +290,29 @@ def sync_birthday(sub_id):
                 'message': 'Simulated sync (credentials.json missing)'
             }), 200
 
+        event_type = sub.get('event_type') or 'Birthday'
+        is_birthday = event_type.lower() == 'birthday'
+        wish_text = "a happy birthday" if is_birthday else f"a happy {event_type}"
+        emoji = "🎂" if is_birthday else "🎉"
+
         position_title = f" ({sub['position']})" if sub.get('position') else ""
         position_desc = f"\nDepartment / position held: {sub['position']}" if sub.get('position') else ""
+        
+        contact_desc = ""
+        if sub.get('whatsapp'):
+            contact_desc += f"\nWhatsApp: {sub['whatsapp']}"
+        if sub.get('email'):
+            contact_desc += f"\nEmail: {sub['email']}"
+
         event = {
-            'summary': f"🎂 {sub['name']}'s Birthday{position_title}",
-            'description': f"Don't forget to wish {sub['name']} a happy birthday!{position_desc}\n\nView or download their picture on the Admin Dashboard:\n{request.url_root}admin",
+            'summary': f"{emoji} {sub['name']}'s {event_type}{position_title}",
+            'description': f"Don't forget to wish {sub['name']} {wish_text}!{position_desc}{contact_desc}\n\nView or download their picture on the Admin Dashboard:\n{request.url_root}admin",
             'start': {
-                'date': str(birthday_date),
+                'date': str(event_date),
                 'timeZone': 'UTC',
             },
             'end': {
-                'date': str(birthday_date + datetime.timedelta(days=1)),
+                'date': str(event_date + datetime.timedelta(days=1)),
                 'timeZone': 'UTC',
             },
             'recurrence': [
@@ -338,9 +367,9 @@ def uploaded_file(filename):
     # but the redirect enhancement above helps ensure remote files are downloaded.
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
-@app.route('/api/edit-birthday/<int:sub_id>', methods=['POST'])
+@app.route('/api/edit-event/<int:sub_id>', methods=['POST'])
 @login_required
-def edit_birthday(sub_id):
+def edit_event(sub_id):
     name = request.form.get('name')
     date_str = request.form.get('date')
     
@@ -363,11 +392,11 @@ def edit_birthday(sub_id):
         return jsonify({'error': 'Failed to update record.'}), 500
         
     if DATABASE_URL: cursor.close()
-    return jsonify({'message': 'Successfully updated birthday!'}), 200
+    return jsonify({'message': 'Successfully updated event!'}), 200
 
-@app.route('/api/delete-birthday/<int:sub_id>', methods=['DELETE'])
+@app.route('/api/delete-event/<int:sub_id>', methods=['DELETE'])
 @login_required
-def delete_birthday(sub_id):
+def delete_event(sub_id):
     db = get_db()
     cursor = db.cursor() if DATABASE_URL else db
     
@@ -384,7 +413,7 @@ def delete_birthday(sub_id):
         return jsonify({'error': 'Failed to delete record.'}), 500
         
     if DATABASE_URL: cursor.close()
-    return jsonify({'message': 'Successfully deleted birthday!'}), 200
+    return jsonify({'message': 'Successfully deleted event!'}), 200
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
