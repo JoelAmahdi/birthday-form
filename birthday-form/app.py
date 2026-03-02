@@ -58,18 +58,21 @@ def get_db():
         if db is None:
             conn_url = DATABASE_URL
             
-            # Parse the URL to explicitly pass connection arguments and force IPv4
             try:
+                # Ensure the url parser knows about postgresql
+                urllib.parse.uses_netloc.append("postgresql")
                 parsed_url = urllib.parse.urlparse(conn_url)
+                
                 hostname = parsed_url.hostname
                 
-                # Force IPv4 resolution for Render -> Supabase compatibility
+                # Render deployment fails to connect to Supabase IPv6 endpoints natively.
+                # Here we force an IPv4 resolution of the Supabase host before connecting.
                 if hostname:
                     ipv4_address = socket.gethostbyname(hostname)
                 else:
                     ipv4_address = hostname
                 
-                # Connect with explicit kwargs instead of the dsn string to guarantee IPv4 usage
+                # Explicitly pass the resolved IPv4 address to psycopg2
                 db = g._database = psycopg2.connect(
                     host=ipv4_address,
                     database=parsed_url.path.lstrip('/'),
@@ -80,8 +83,9 @@ def get_db():
                     cursor_factory=RealDictCursor
                 )
             except Exception as e:
-                print(f"Warning: Explicit IPv4 connection failed, falling back to DSN. Error: {e}")
-                # Fallback to the original DSN method with sslmode
+                print(f"Warning: Explicit IPv4 connection parsing failed: {e}")
+                
+                # Safe fallback to standard DSN
                 if "?sslmode=" not in conn_url and "&sslmode=" not in conn_url:
                     conn_url += "?sslmode=require" if "?" not in conn_url else "&sslmode=require"
                 db = g._database = psycopg2.connect(conn_url, cursor_factory=RealDictCursor)
