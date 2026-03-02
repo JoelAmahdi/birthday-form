@@ -17,7 +17,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 customEventGroup.style.display = 'block';
                 customEventInput.required = true;
             } else {
-                customEventGroup.style.display = 'none';
+                customEventGroup.style.display = 'none';a
                 customEventInput.required = false;
             }
         });
