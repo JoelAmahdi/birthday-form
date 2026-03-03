@@ -158,6 +158,20 @@ header p {
     box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2);
 }
 
+.input-error {
+    animation: flashOrange 0.5s ease;
+    border: 2px solid transparent !important;
+    background: linear-gradient(var(--input-bg), var(--input-bg)) padding-box,
+                linear-gradient(135deg, var(--accent-color), #f97316) border-box !important;
+    box-shadow: 0 0 10px rgba(234, 88, 12, 0.3) !important;
+}
+
+@keyframes flashOrange {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.02); }
+    100% { transform: scale(1); }
+}
+
 .file-upload {
     position: relative;
 }
@@ -182,6 +196,13 @@ header p {
 .file-label:hover {
     border-color: var(--primary-color);
     background: #eff6ff;
+}
+
+.file-error {
+    animation: flashOrange 0.5s ease;
+    border: 2px dashed transparent !important;
+    background: linear-gradient(#f1f5f9, #f1f5f9) padding-box,
+                linear-gradient(135deg, var(--accent-color), #f97316) border-box !important;
 }
 
 .file-text {
