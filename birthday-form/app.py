@@ -180,7 +180,7 @@ def send_admin_notification(sub, request_url_root):
         msg = MIMEMultipart()
         msg['From'] = SMTP_USERNAME
         msg['To'] = ADMIN_EMAIL
-        event_type = sub.get('event_type') or 'Birthday'
+        event_type = sub['event_type'] if 'event_type' in sub.keys() and sub['event_type'] else 'Birthday'
         msg['Subject'] = f"New Event Submitted: {sub['name']}'s {event_type}"
         
         body = f"""
@@ -190,9 +190,9 @@ def send_admin_notification(sub, request_url_root):
             <p><strong>Name:</strong> {sub['name']}</p>
             <p><strong>Event:</strong> {event_type}</p>
             <p><strong>Date:</strong> {sub['date']}</p>
-            <p><strong>Position:</strong> {sub.get('position', 'N/A')}</p>
-            <p><strong>WhatsApp:</strong> {sub.get('whatsapp', 'N/A')}</p>
-            <p><strong>Email:</strong> {sub.get('email', 'N/A')}</p>
+            <p><strong>Position:</strong> {sub['position'] if 'position' in sub.keys() and sub['position'] else 'N/A'}</p>
+            <p><strong>WhatsApp:</strong> {sub['whatsapp'] if 'whatsapp' in sub.keys() and sub['whatsapp'] else 'N/A'}</p>
+            <p><strong>Email:</strong> {sub['email'] if 'email' in sub.keys() and sub['email'] else 'N/A'}</p>
             <p><a href="{request_url_root}admin">View in Admin Dashboard</a></p>
           </body>
         </html>
@@ -216,18 +216,18 @@ def sync_event_to_calendar(sub, request_url_root):
         if not service:
             return False, "Simulated sync (credentials.json missing)"
 
-        event_type = sub.get('event_type') or 'Birthday'
+        event_type = sub['event_type'] if 'event_type' in sub.keys() and sub['event_type'] else 'Birthday'
         is_birthday = event_type.lower() == 'birthday'
         wish_text = "a happy birthday" if is_birthday else f"a happy {event_type}"
         emoji = "🎂" if is_birthday else "🎉"
 
-        position_title = f" ({sub['position']})" if sub.get('position') else ""
-        position_desc = f"\nDepartment / position held: {sub['position']}" if sub.get('position') else ""
+        position_title = f" ({sub['position']})" if 'position' in sub.keys() and sub['position'] else ""
+        position_desc = f"\nDepartment / position held: {sub['position']}" if 'position' in sub.keys() and sub['position'] else ""
         
         contact_desc = ""
-        if sub.get('whatsapp'):
+        if 'whatsapp' in sub.keys() and sub['whatsapp']:
             contact_desc += f"\nWhatsApp: {sub['whatsapp']}"
-        if sub.get('email'):
+        if 'email' in sub.keys() and sub['email']:
             contact_desc += f"\nEmail: {sub['email']}"
 
         event = {
