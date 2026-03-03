@@ -278,81 +278,89 @@ def index():
 
 @app.route('/api/submit', methods=['POST'])
 def submit_birthday():
-    if 'picture' not in request.files:
-        return jsonify({'error': 'No file uploaded'}), 400
-    
-    file = request.files['picture']
-    name = request.form.get('name')
-    position = request.form.get('position', '')
-    event_type = request.form.get('event_type', 'Birthday')
-    whatsapp = request.form.get('whatsapp', '')
-    email = request.form.get('email', '')
-    date_str = request.form.get('date')
-
-    if not name or not date_str:
-        return jsonify({'error': 'Name and date are required'}), 400
-
-    if file.filename == '':
-        return jsonify({'error': 'No file selected'}), 400
+    try:
+        if 'picture' not in request.files:
+            return jsonify({'error': 'No file uploaded'}), 400
         
-    if file:
-        filename = secure_filename(f"{int(datetime.datetime.now().timestamp())}_{file.filename}")
-        
-        if supabase:
-            try:
-                # Upload to Supabase Storage
-                image_path = upload_to_supabase(file, filename, file.content_type)
-            except Exception as e:
-                print(f"Supabase Upload Error: {e}")
-                return jsonify({'error': 'Failed to upload image to cloud storage.'}), 500
-        else:
-            # Fallback to local storage
-            file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-            file.save(file_path)
-            image_path = filename
+        file = request.files['picture']
+        name = request.form.get('name')
+        position = request.form.get('position', '')
+        event_type = request.form.get('event_type', 'Birthday')
+        whatsapp = request.form.get('whatsapp', '')
+        email = request.form.get('email', '')
+        date_str = request.form.get('date')
 
-        db = get_db()
-        cursor = db.cursor()
-        
-        # Insert into database using parameterization appropriate for the DB type
-        if DATABASE_URL:
-            # psycopg2 uses %s
-            cursor.execute(
-                'INSERT INTO submissions (name, position, event_type, whatsapp, email, date, image_path) VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id', 
-                (name, position, event_type, whatsapp, email, date_str, image_path)
-            )
-            inserted_id = cursor.fetchone()['id']
-            cursor.execute('SELECT * FROM submissions WHERE id = %s', (inserted_id,))
-            new_sub = cursor.fetchone()
-        else:
-            # sqlite uses ?
-            cursor.execute(
-                'INSERT INTO submissions (name, position, event_type, whatsapp, email, date, image_path) VALUES (?, ?, ?, ?, ?, ?, ?)', 
-                (name, position, event_type, whatsapp, email, date_str, image_path)
-            )
-            inserted_id = cursor.lastrowid
-            cursor.execute('SELECT * FROM submissions WHERE id = ?', (inserted_id,))
-            new_sub = cursor.fetchone()
+        if not name or not date_str:
+            return jsonify({'error': 'Name and date are required'}), 400
+
+        if file.filename == '':
+            return jsonify({'error': 'No file selected'}), 400
             
-        db.commit()
-        
-        if new_sub:
-            success, msg = sync_event_to_calendar(new_sub, request.url_root)
-            if success or "Simulated" in msg:
-                if DATABASE_URL:
-                    cursor.execute('UPDATE submissions SET synced = TRUE WHERE id = %s', (inserted_id,))
-                else:
-                    cursor.execute('UPDATE submissions SET synced = 1 WHERE id = ?', (inserted_id,))
-                db.commit()
+        if file:
+            filename = secure_filename(f"{int(datetime.datetime.now().timestamp())}_{file.filename}")
+            
+            if supabase:
+                try:
+                    # Upload to Supabase Storage
+                    image_path = upload_to_supabase(file, filename, file.content_type)
+                except Exception as e:
+                    print(f"Supabase Upload Error: {e}")
+                    return jsonify({'error': 'Failed to upload image to cloud storage.'}), 500
+            else:
+                # Fallback to local storage
+                file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+                file.save(file_path)
+                image_path = filename
+
+            db = get_db()
+            cursor = db.cursor()
+            
+            # Insert into database using parameterization appropriate for the DB type
+            if DATABASE_URL:
+                # psycopg2 uses %s
+                cursor.execute(
+                    'INSERT INTO submissions (name, position, event_type, whatsapp, email, date, image_path) VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id', 
+                    (name, position, event_type, whatsapp, email, date_str, image_path)
+                )
+                inserted_id = cursor.fetchone()['id']
+                cursor.execute('SELECT * FROM submissions WHERE id = %s', (inserted_id,))
+                new_sub = cursor.fetchone()
+            else:
+                # sqlite uses ?
+                cursor.execute(
+                    'INSERT INTO submissions (name, position, event_type, whatsapp, email, date, image_path) VALUES (?, ?, ?, ?, ?, ?, ?)', 
+                    (name, position, event_type, whatsapp, email, date_str, image_path)
+                )
+                inserted_id = cursor.lastrowid
+                cursor.execute('SELECT * FROM submissions WHERE id = ?', (inserted_id,))
+                new_sub = cursor.fetchone()
                 
-            send_admin_notification(new_sub, request.url_root)
+            db.commit()
+            
+            if new_sub:
+                success, msg = sync_event_to_calendar(new_sub, request.url_root)
+                if success or "Simulated" in msg:
+                    if DATABASE_URL:
+                        cursor.execute('UPDATE submissions SET synced = TRUE WHERE id = %s', (inserted_id,))
+                    else:
+                        cursor.execute('UPDATE submissions SET synced = 1 WHERE id = ?', (inserted_id,))
+                    db.commit()
+                    
+                send_admin_notification(new_sub, request.url_root)
 
-        if DATABASE_URL:
-            cursor.close()
+            if DATABASE_URL:
+                cursor.close()
 
-        return jsonify({'message': 'Successfully submitted event!'}), 200
+            return jsonify({'message': 'Successfully submitted event!'}), 200
 
-    return jsonify({'error': 'Unknown error occurred.'}), 500
+    except Exception as e:
+        import traceback
+        error_msg = str(e)
+        # Log to the server console
+        print("Exception in /api/submit:", error_msg)
+        traceback.print_exc()
+        # Return to client so they can see the exact error instead of a generic HTML page
+        return jsonify({'error': f"Internal Server Error: {error_msg}"}), 500
 
 @app.route('/admin/login', methods=['GET', 'POST'])
 def login():
