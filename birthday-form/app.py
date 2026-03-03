@@ -82,28 +82,37 @@ def init_db():
         cursor = db.cursor() if DATABASE_URL else db
         if DATABASE_URL:
             # PostgreSQL syntax
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS submissions (
-                    id SERIAL PRIMARY KEY,
-                    name TEXT NOT NULL,
-                    date TEXT NOT NULL,
-                    image_path TEXT NOT NULL,
-                    synced BOOLEAN NOT NULL DEFAULT FALSE,
-                    position TEXT,
-                    event_type TEXT,
-                    whatsapp TEXT,
-                    email TEXT
-                )
-            ''')
+            try:
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS submissions (
+                        id SERIAL PRIMARY KEY,
+                        name TEXT NOT NULL,
+                        date TEXT NOT NULL,
+                        image_path TEXT NOT NULL,
+                        synced BOOLEAN NOT NULL DEFAULT FALSE,
+                        position TEXT,
+                        event_type TEXT,
+                        whatsapp TEXT,
+                        email TEXT
+                    )
+                ''')
+                db.commit()
+                print("PostgreSQL 'submissions' table verified/created.")
+            except Exception as e:
+                import traceback
+                print(f"Error creating PostgreSQL table: {e}")
+                traceback.print_exc()
+                db.rollback()
+                raise Exception(f"Failed to create table: {e}")
+            
             # Attempt to add columns for backward compatibility
-            try: cursor.execute('ALTER TABLE submissions ADD COLUMN position TEXT')
-            except Exception: db.rollback()
-            try: cursor.execute('ALTER TABLE submissions ADD COLUMN event_type TEXT')
-            except Exception: db.rollback()
-            try: cursor.execute('ALTER TABLE submissions ADD COLUMN whatsapp TEXT')
-            except Exception: db.rollback()
-            try: cursor.execute('ALTER TABLE submissions ADD COLUMN email TEXT')
-            except Exception: db.rollback()
+            for col in ['position', 'event_type', 'whatsapp', 'email']:
+                try: 
+                    cursor.execute(f'ALTER TABLE submissions ADD COLUMN IF NOT EXISTS {col} TEXT')
+                    db.commit()
+                except Exception as e:
+                    print(f"Warning: Could not add column {col}: {e}")
+                    db.rollback()
         else:
             # SQLite syntax
             cursor.execute('''
@@ -119,21 +128,24 @@ def init_db():
                     email TEXT
                 )
             ''')
-            try: cursor.execute('ALTER TABLE submissions ADD COLUMN position TEXT')
-            except Exception: pass
-            try: cursor.execute('ALTER TABLE submissions ADD COLUMN event_type TEXT')
-            except Exception: pass
-            try: cursor.execute('ALTER TABLE submissions ADD COLUMN whatsapp TEXT')
-            except Exception: pass
-            try: cursor.execute('ALTER TABLE submissions ADD COLUMN email TEXT')
-            except Exception: pass
+            db.commit()
+            print("SQLite 'submissions' table verified/created.")
+            
+            for col in ['position', 'event_type', 'whatsapp', 'email']:
+                try: 
+                    cursor.execute(f'ALTER TABLE submissions ADD COLUMN {col} TEXT')
+                    db.commit()
+                except Exception: 
+                    pass
         
-        db.commit()
         if DATABASE_URL:
             cursor.close()
 
 # Initialize DB on startup
-init_db()
+try:
+    init_db()
+except Exception as e:
+    print(f"Initial DB setup failed: {e}")
 
 def login_required(f):
     @wraps(f)
@@ -279,6 +291,9 @@ def index():
 @app.route('/api/submit', methods=['POST'])
 def submit_birthday():
     try:
+        # Failsafe initialization
+        init_db()
+        
         if 'picture' not in request.files:
             return jsonify({'error': 'No file uploaded'}), 400
         
@@ -393,6 +408,16 @@ def admin():
         
         
     return render_template('admin.html', submissions=submissions)
+
+@app.route('/admin/init-db')
+@login_required
+def manual_init_db():
+    try:
+        init_db()
+        return "Database initialized successfully! <a href='/admin'>Back to Admin</a>"
+    except Exception as e:
+        import traceback
+        return f"Error initializing database: {e}<br><pre>{traceback.format_exc()}</pre>"
 
 @app.route('/api/sync-event/<int:sub_id>', methods=['POST'])
 @login_required
