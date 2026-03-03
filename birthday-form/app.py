@@ -12,9 +12,6 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 from supabase import create_client, Client
 from dotenv import load_dotenv
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 from dotenv import load_dotenv
 
 # Load environment variables from .env if present
@@ -29,12 +26,7 @@ DATABASE_URL = os.environ.get('DATABASE_URL')
 SUPABASE_URL = os.environ.get('SUPABASE_URL')
 SUPABASE_KEY = os.environ.get('SUPABASE_KEY')
 
-# SMTP and Notifications configuration
-SMTP_SERVER = os.environ.get('SMTP_SERVER')
-SMTP_PORT = int(os.environ.get('SMTP_PORT', 587))
-SMTP_USERNAME = os.environ.get('SMTP_USERNAME')
-SMTP_PASSWORD = os.environ.get('SMTP_PASSWORD')
-ADMIN_EMAIL = os.environ.get('ADMIN_EMAIL')
+
 
 # Initialize Supabase client if credentials are provided
 supabase: Client = None
@@ -175,6 +167,12 @@ def get_calendar_service():
         else:
             if not os.path.exists('credentials.json'):
                 return None
+            
+            # Prevent hanging on production server
+            if os.environ.get('RENDER') or os.environ.get('DATABASE_URL'):
+                print("Skipping local OAuth flow on production server to avert timeout. Please provide token.json directly.")
+                return None
+                
             flow = InstalledAppFlow.from_client_secrets_file(
                 'credentials.json', SCOPES)
             creds = flow.run_local_server(port=0)
@@ -184,41 +182,6 @@ def get_calendar_service():
     service = build('calendar', 'v3', credentials=creds)
     return service
 
-def send_admin_notification(sub, request_url_root):
-    if not (SMTP_SERVER and SMTP_USERNAME and SMTP_PASSWORD and ADMIN_EMAIL):
-        print("SMTP credentials not fully configured. Skipping email notification.")
-        return
-    try:
-        msg = MIMEMultipart()
-        msg['From'] = SMTP_USERNAME
-        msg['To'] = ADMIN_EMAIL
-        event_type = sub['event_type'] if 'event_type' in sub.keys() and sub['event_type'] else 'Birthday'
-        msg['Subject'] = f"New Event Submitted: {sub['name']}'s {event_type}"
-        
-        body = f"""
-        <html>
-          <body>
-            <h2>New Event Submission</h2>
-            <p><strong>Name:</strong> {sub['name']}</p>
-            <p><strong>Event:</strong> {event_type}</p>
-            <p><strong>Date:</strong> {sub['date']}</p>
-            <p><strong>Position:</strong> {sub['position'] if 'position' in sub.keys() and sub['position'] else 'N/A'}</p>
-            <p><strong>WhatsApp:</strong> {sub['whatsapp'] if 'whatsapp' in sub.keys() and sub['whatsapp'] else 'N/A'}</p>
-            <p><strong>Email:</strong> {sub['email'] if 'email' in sub.keys() and sub['email'] else 'N/A'}</p>
-            <p><a href="{request_url_root}admin">View in Admin Dashboard</a></p>
-          </body>
-        </html>
-        """
-        msg.attach(MIMEText(body, 'html'))
-        
-        server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
-        server.starttls()
-        server.login(SMTP_USERNAME, SMTP_PASSWORD)
-        server.send_message(msg)
-        server.quit()
-        print("Admin notification email sent successfully.")
-    except Exception as e:
-        print(f"Failed to send admin notification email: {e}")
 
 def sync_event_to_calendar(sub, request_url_root):
     try:
@@ -360,8 +323,7 @@ def submit_birthday():
                     else:
                         cursor.execute('UPDATE submissions SET synced = 1 WHERE id = ?', (inserted_id,))
                     db.commit()
-                    
-                send_admin_notification(new_sub, request.url_root)
+
 
             if DATABASE_URL:
                 cursor.close()
