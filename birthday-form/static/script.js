@@ -52,6 +52,55 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const formData = new FormData(form);
         
+        // Validation logic
+        let isValid = true;
+        const requiredFields = [
+            document.getElementById('name'),
+            document.getElementById('date'),
+        ];
+        
+        // Custom event required if 'Other' is selected
+        if (eventTypeSelect && eventTypeSelect.value === 'Other') {
+            requiredFields.push(customEventInput);
+        }
+
+        // Reset errors
+        document.querySelectorAll('.input-error, .file-error').forEach(el => {
+            el.classList.remove('input-error', 'file-error');
+        });
+
+        requiredFields.forEach(field => {
+            if (!field.value.trim()) {
+                field.classList.add('input-error');
+                isValid = false;
+                
+                // Remove error style on input
+                field.addEventListener('input', function() {
+                    this.classList.remove('input-error');
+                }, { once: true });
+            }
+        });
+
+        // File validation
+        const fileLabel = document.querySelector('.file-label');
+        if (!fileInput.files || fileInput.files.length === 0) {
+            fileLabel.classList.add('file-error');
+            isValid = false;
+            
+            fileInput.addEventListener('change', function() {
+                fileLabel.classList.remove('file-error');
+            }, { once: true });
+        }
+
+        if (!isValid) {
+            statusMessage.textContent = 'Please fill out all required fields before submitting.';
+            statusMessage.className = 'status-message status-error';
+            btnText.style.display = 'block';
+            loader.style.display = 'none';
+            submitBtn.disabled = false;
+            return;
+        }
+
         // Handle custom event type logic
         const eventType = formData.get('event_type_select');
         if (eventType === 'Other') {
